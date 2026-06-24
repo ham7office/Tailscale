@@ -3,33 +3,30 @@ on:
   workflow_dispatch:
 jobs:
   secure-rdp:
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 3600
     steps:
       - name: Configure Core RDP Settings
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1 -Force
           netsh advfirewall firewall delete rule name="RDP-Tailscale"
           netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
           Restart-Service -Name TermService -Force
 
-      - name: Create RDP User with Static Password
+      - name: Create RDP User
         run: |
-          $password = "admin@123"
+          $password = "MyStrong123"
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
 
-          if (-not (Get-LocalUser -Name "Ham8Office" -ErrorAction SilentlyContinue)) {
-              New-LocalUser -Name "Ham8Office" -Password $securePass -AccountNeverExpires
+          if (-not (Get-LocalUser -Name "HAM7Office" -ErrorAction SilentlyContinue)) {
+              New-LocalUser -Name "HAM7Office" -Password $securePass -AccountNeverExpires
           }
-
-          Add-LocalGroupMember -Group "Administrators" -Member "Ham8Office"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Ham8Office"
-
-          echo "RDP_CREDS=User: Ham8Office | Password: $password" >> $env:GITHUB_ENV
-
-          if (-not (Get-LocalUser -Name "Ham8Office")) {
+          Add-LocalGroupMember -Group "Administrators" -Member "HAM7Office"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "HAM7Office"
+       
+          if (-not (Get-LocalUser -Name "HAM7Office")) {
               Write-Error "User creation failed"
               exit 1
           }
@@ -38,14 +35,13 @@ jobs:
         run: |
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
           $installerPath = "$env:TEMP\tailscale.msi"
-
           Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
           Remove-Item $installerPath -Force
 
       - name: Establish Tailscale Connection
         run: |
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=HAM7Office
           $tsIP = $null
           $retries = 0
           while (-not $tsIP -and $retries -lt 10) {
@@ -69,13 +65,37 @@ jobs:
           }
           Write-Host "TCP connectivity successful!"
 
+      - name: Download, Extract, and Fix Permissions
+        run: |
+          $DirectLink = "https://github.com/Wosol33/Tailscale/releases/download/LWR152/librewolf_RDP.rar"
+          $DesktopPath = "C:\Users\Public\Desktop"
+          $Destination = "$DesktopPath\librewolf_RDP.rar"
+          
+          Write-Host "Downloading librewolf_RDP.rar..."
+          Invoke-WebRequest -Uri $DirectLink -OutFile $Destination
+          Write-Host "تم التحميل! جاري فك الضغط..."
+          
+          tar -xf $Destination -C $DesktopPath
+          Remove-Item $Destination -Force
+          
+          Write-Host "جاري تعديل الصلاحيات وإلغاء القراءة فقط..."
+          
+          Get-ChildItem -Path "$DesktopPath" -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+              if ($_.IsReadOnly) { $_.IsReadOnly = $false }
+          }
+          
+          icacls "$DesktopPath\*" /grant "HAM7Office:(OI)(CI)F" /T /C /Q
+          
+          Write-Host "تم فك الضغط وتجهيز الصلاحيات بنجاح على سطح المكتب!"
+
       - name: Maintain Connection
         run: |
-          Write-Host "`n=== RDP ACCESS ==="
+          Write-Host "`n=== RDP ACCESS READY ==="
           Write-Host "Address: $env:TAILSCALE_IP"
-          Write-Host "Username: Ham8Office"
-          Write-Host "Password: admin@123"
-          Write-Host "==================`n"
+          Write-Host "Username: HAM7Office"
+          Write-Host "Password: MyStrong123"
+          Write-Host "========================`n"
+         
           while ($true) {
               Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
               Start-Sleep -Seconds 300
